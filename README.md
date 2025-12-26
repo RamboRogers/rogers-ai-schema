@@ -28,7 +28,7 @@ Rogers-AI-Schema provides a **single, unified table design** with:
 - ✅ **Multi-provider vector support** (5 simultaneous embedding providers)
 - ✅ **Complete audit trail** for NIST AI-600 compliance
 - ✅ **Privacy-first design** with GDPR Article 17 (right to erasure) support
-- ✅ **Database independence** - works with PostgreSQL, MySQL, SQLite, SQL Server
+- ✅ **Database independence** - works with PostgreSQL, SQLite or others (with DESIGN.md as input)
 - ✅ **Phased enhancement path** (Tier 2/3 roadmap for advanced features)
 
 ## Quick Start
