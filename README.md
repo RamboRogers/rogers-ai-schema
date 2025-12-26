@@ -310,43 +310,6 @@ WHERE DocumentStatus = 'Active';
 4. **Batch operations**: Use transactions for bulk inserts (100x speedup)
 5. **Read replicas**: Separate read-heavy RAG queries from write operations
 
-## Migration from Existing Systems
-
-### From Pinecone/Weaviate/Chroma
-
-```python
-# Export from vector database
-results = vector_db.query(namespace="production")
-
-# Import to Rogers-AI-Schema
-for doc in results:
-    cursor.execute("""
-        INSERT INTO ai_documents (
-            UUID, SourceDocumentName, DocumentChunkText,
-            DocumentEmbeddingModel01, DocumentEmbeddingVectors01,
-            ...
-        ) VALUES (?, ?, ?, ?, ?, ...)
-    """, (doc.id, doc.metadata['source'], doc.text, 'text-embedding-ada-002', doc.vector))
-```
-
-### From LangChain Document Loaders
-
-```python
-from langchain.document_loaders import PyPDFLoader
-
-loader = PyPDFLoader("document.pdf")
-pages = loader.load_and_split()
-
-for i, page in enumerate(pages):
-    cursor.execute("""
-        INSERT INTO ai_documents (
-            InsertUser, UpdateUser,
-            SourceDocumentName, DocumentChunkNumber, DocumentChunkText,
-            DatasetType, DocumentStatus
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, ('langchain_loader', 'langchain_loader', 'document.pdf', i+1, page.page_content, 'Production', 'Active'))
-```
-
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
