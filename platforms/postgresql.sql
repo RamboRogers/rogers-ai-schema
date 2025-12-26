@@ -45,23 +45,23 @@ CREATE TABLE IF NOT EXISTS ai_documents (
     -- ============================================
     -- Vector Embeddings - 5 Providers (15 fields)
     -- ============================================
-    DocumentEmbeddingModel01 VARCHAR(200),
+    DocumentEmbeddingModel01 VARCHAR(2000),
     DocumentEmbeddingURL01 TEXT,
-    DocumentEmbeddingVectors01 vector(1024),  -- e.g., Qwen/Qwen2.5-Coder-0.5B-Instruct (1024 dims)
+    DocumentEmbeddingVectors01 vector(1024),  -- e.g., Qwen/Qwen3-Embedding-0.6B (1024 dims)
 
-    DocumentEmbeddingModel02 VARCHAR(200),
+    DocumentEmbeddingModel02 VARCHAR(2000),
     DocumentEmbeddingURL02 TEXT,
     DocumentEmbeddingVectors02 vector(1536),  -- e.g., OpenAI text-embedding-ada-002 (1536 dims)
 
-    DocumentEmbeddingModel03 VARCHAR(200),
+    DocumentEmbeddingModel03 VARCHAR(2000),
     DocumentEmbeddingURL03 TEXT,
     DocumentEmbeddingVectors03 vector(768),   -- e.g., sentence-transformers (768 dims)
 
-    DocumentEmbeddingModel04 VARCHAR(200),
+    DocumentEmbeddingModel04 VARCHAR(2000),
     DocumentEmbeddingURL04 TEXT,
     DocumentEmbeddingVectors04 vector(384),   -- e.g., all-MiniLM-L6-v2 (384 dims)
 
-    DocumentEmbeddingModel05 VARCHAR(200),
+    DocumentEmbeddingModel05 VARCHAR(2000),
     DocumentEmbeddingURL05 TEXT,
     DocumentEmbeddingVectors05 vector(2048),  -- e.g., custom/large models (2048 dims)
 
