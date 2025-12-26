@@ -137,34 +137,34 @@ for row in results:
 │ ai_documents                                                │
 ├─────────────────────────────────────────────────────────────┤
 │ Core Identity & Audit (7)                                   │
-│ ├─ ID, UUID, Schema Version, Timestamps, Users             │
+│ ├─ ID, UUID, Schema Version, Timestamps, Users              │
 │                                                             │
 │ Source Document Metadata (7)                                │
-│ ├─ Name, Path, Hash, Title, Summary, Author, Organization  │
+│ ├─ Name, Path, Hash, Title, Summary, Author, Organization   │
 │                                                             │
 │ Content & Chunking (2)                                      │
-│ ├─ Chunk Number, Chunk Text                                │
+│ ├─ Chunk Number, Chunk Text                                 │
 │                                                             │
 │ Vector Embeddings (15) - 5 Providers                        │
-│ ├─ Model, URL, Vectors (×5)                                │
+│ ├─ Model, URL, Vectors (×5)                                 │
 │                                                             │
 │ Privacy & PII Protection (10) - GDPR                        │
-│ ├─ PII Detection, Classification, Legal Basis, Deletion    │
+│ ├─ PII Detection, Classification, Legal Basis, Deletion     │
 │                                                             │
 │ Data Governance (8) - NIST AI RMF                           │
-│ ├─ Dataset Type, Quality Score, Validation, Lineage        │
+│ ├─ Dataset Type, Quality Score, Validation, Lineage         │
 │                                                             │
 │ Legal & Licensing (6)                                       │
-│ ├─ Copyright, License, Usage Restrictions                  │
+│ ├─ Copyright, License, Usage Restrictions                   │
 │                                                             │
 │ Risk & Safety (4) - NIST AI RMF                             │
-│ ├─ Risk Level, Content Safety, Moderation                  │
+│ ├─ Risk Level, Content Safety, Moderation                   │
 │                                                             │
 │ Access Control (3) - Security                               │
-│ ├─ Access Level, Classification, Allowed Roles             │
+│ ├─ Access Level, Classification, Allowed Roles              │
 │                                                             │
 │ Audit Trail (1) - EU AI Act Article 12                      │
-│ ├─ Last Modified Reason                                    │
+│ ├─ Last Modified Reason                                     │
 │                                                             │
 │ Lifecycle Management (2)                                    │
 │ ├─ Status, Version                                          │
