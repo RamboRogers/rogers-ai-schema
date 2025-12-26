@@ -10,7 +10,7 @@
 
 ## Overview
 
-Rogers-AI-Schema is a **production-ready, compliance-first database schema** for AI and RAG (Retrieval-Augmented Generation) workloads. Designed to be database-agnostic, it provides comprehensive metadata tracking, data governance, and regulatory compliance out of the box.
+Rogers-AI-Schema is a **production-ready, compliance-first database schema** for AI and RAG (Retrieval-Augmented Generation) workloads. Designed to be database-agnostic, it provides comprehensive metadata tracking, data governance, and regulatory compliance out of the box with design condirations from NIST Guidance and EU Regulations.
 
 ### Problem Statement
 
