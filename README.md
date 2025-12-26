@@ -349,14 +349,39 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE) - Free for commercial and non-commercial use with GPLv3 terms.
 
-**Author**: Matthew Rogers, CISSP
-**Title**: Field CTO for AI and Security at VAST Data
+---
 
-### Connect
-- [LinkedIn](https://www.linkedin.com/in/matthewrogerscissp/)
-- [Twitter/X](https://x.com/Matthewrogers)
-- [GitHub](https://github.com/RamboRogers/)
-- [Website](https://matthewrogers.org)
+### 👤 Author
+
+**Matthew Rogers, CISSP**
+*Field CTO for AI and Security at [VAST Data](https://vastdata.com)*
+
+#### Connect & Follow
+
+<table>
+<tr>
+<td align="center" width="25%">
+<a href="https://www.linkedin.com/in/matthewrogerscissp/">
+<img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"/>
+</a>
+</td>
+<td align="center" width="25%">
+<a href="https://x.com/Matthewrogers">
+<img src="https://img.shields.io/badge/Twitter/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Twitter/X"/>
+</a>
+</td>
+<td align="center" width="25%">
+<a href="https://github.com/RamboRogers/">
+<img src="https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"/>
+</a>
+</td>
+<td align="center" width="25%">
+<a href="https://matthewrogers.org">
+<img src="https://img.shields.io/badge/Website-4285F4?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Website"/>
+</a>
+</td>
+</tr>
+</table>
 
 ## Citation
 
@@ -369,7 +394,7 @@ If you use Rogers-AI-Schema in your research or production systems, please cite:
   year = {2025},
   version = {1.0.0-tier1},
   url = {https://github.com/RamboRogers/rogers-ai-schema},
-  note = {Author: Matthew Rogers, CISSP - Field CTO for AI and Security at VAST Data}
+  note = {Author: Matthew Rogers}
 }
 ```
 
