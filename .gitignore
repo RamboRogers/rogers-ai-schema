@@ -1,0 +1,11 @@
+.venv/
+.vscode/
+__pycache__/
+.DS_Store
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw

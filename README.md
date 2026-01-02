@@ -28,7 +28,7 @@ Rogers-AI-Schema provides a **single, unified table design** with:
 - ✅ **Multi-provider vector support** (5 simultaneous embedding providers)
 - ✅ **Complete audit trail** for NIST AI-600 compliance
 - ✅ **Privacy-first design** with GDPR Article 17 (right to erasure) support
-- ✅ **Database independence** - works with PostgreSQL, SQLite or others (with DESIGN.md as input)
+- ✅ **Database independence** - works with PostgreSQL, SQLite, VAST Data Platform, or others (with DESIGN.md as input)
 - ✅ **Phased enhancement path** (Tier 2/3 roadmap for advanced features)
 
 ## Quick Start
@@ -51,6 +51,11 @@ Rogers-AI-Schema provides a **single, unified table design** with:
 <td>Edge AI, embedded applications, mobile RAG, offline-first, single-user systems</td>
 <td><a href="platforms/SQLITE_VECTOR.md">📗 SQLite Guide</a></td>
 </tr>
+<tr>
+<td><strong>VAST Data Platform</strong></td>
+<td>Exascale AI infrastructure, unified data lakehouse, enterprise vector search, real-time analytics</td>
+<td><a href="platforms/VASTDB.md">📙 VAST Data Platform Guide</a></td>
+</tr>
 </table>
 
 **Note**: MySQL and SQL Server implementations are planned for future releases. See [future/TIER2_TIER3_ROADMAP.md](future/TIER2_TIER3_ROADMAP.md) for details.
@@ -63,6 +68,10 @@ psql -U your_user -d your_database -f platforms/postgresql.sql
 
 # SQLite with vector extension
 sqlite3 ai_documents.db < platforms/sqlite_vector.sql
+
+# VAST Data Platform (Python SDK)
+pip install vastdb pyarrow
+python platforms/vast_schema.py --create
 ```
 
 ### 3. Start Ingesting AI Data
@@ -186,6 +195,7 @@ for row in results:
 |----------|-------|----------|
 | **PostgreSQL** | [platforms/POSTGRESQL.md](platforms/POSTGRESQL.md) | pgvector REQUIRED, HNSW indexes, native vector types, enterprise scale |
 | **SQLite** | [platforms/SQLITE_VECTOR.md](platforms/SQLITE_VECTOR.md) | sqlite-vec extension, FTS5, edge deployments, offline-first |
+| **VAST Data Platform** | [platforms/VASTDB.md](platforms/VASTDB.md) | Native vectors, exascale, Python SDK, unified data lakehouse |
 
 ### Roadmap & Planning
 
@@ -306,7 +316,7 @@ WHERE DocumentStatus = 'Active';
 
 1. **Index strategically**: ContainsPII, DocumentStatus, AccessControlLevel, RiskLevel
 2. **Partition large tables**: By DocumentStatus or InsertDateTime
-3. **Vector indexing**: Use platform-specific vector indexes (IVFFlat, HNSW, sqlite-vec)
+3. **Vector indexing**: Use platform-specific vector indexes (IVFFlat, HNSW, sqlite-vec) - Note: VAST Data Platform uses architecture-optimized brute-force search
 4. **Batch operations**: Use transactions for bulk inserts (100x speedup)
 5. **Read replicas**: Separate read-heavy RAG queries from write operations
 
@@ -325,7 +335,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Version 1.0.0 (Current - Tier 1)
 - ✅ 52 core compliance fields
-- ✅ PostgreSQL, SQLite, MySQL, SQL Server support
+- ✅ PostgreSQL, SQLite, VAST Data Platform support
 - ✅ NIST AI-600, EU AI Act, GDPR compliance
 - ✅ Multi-provider vector embeddings (5 providers)
 
