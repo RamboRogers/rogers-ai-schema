@@ -673,7 +673,7 @@ class VASTDBVectorStore(VectorStore):
 
 ### Vector Search Optimization
 
-Since VASTDB doesn't support vector indexes, consider these strategies:
+Since VASTDB doesn't support vector indexes (in 5.4 it does in 5.5 soon to be released), consider these strategies in the short term:
 
 1. **Pre-filtering**: Use WHERE clauses to reduce the dataset before vector comparison
    ```sql
