@@ -69,15 +69,28 @@ VAST Data Platform provides a unified data foundation for AI workloads with nati
 | Python | 3.8+ | Runtime environment |
 | vastdb | Latest | VAST Data Platform SDK |
 | pyarrow | Latest | Apache Arrow data structures |
+| adbc_driver_manager | Latest | ADBC driver interface for SQL queries |
+| libvastdb_adbc_driver.so | Latest | VAST ADBC binary driver (for vector search) |
 
 ### Installation
 
 ```bash
 # Install required packages
-pip install vastdb pyarrow
+pip install vastdb pyarrow adbc_driver_manager
 
 # Verify installation
-python -c "import vastdb; import pyarrow; print('Dependencies installed successfully')"
+python -c "import vastdb; import pyarrow; from adbc_driver_manager import dbapi; print('Dependencies installed successfully')"
+```
+
+### ADBC Driver Binary
+
+The VAST ADBC driver binary (`libvastdb_adbc_driver.so`) is required for SQL queries including vector search. Download from:
+- VAST GitHub Releases
+- VAST Support Portal
+
+Set the path:
+```bash
+export VAST_ADBC_DRIVER_PATH="/path/to/libvastdb_adbc_driver.so"
 ```
 
 ### VAST Cluster Requirements
@@ -172,35 +185,46 @@ python platforms/vast_schema.py --create --drop
 
 ## Schema Implementation
 
-### PyArrow Schema (52 Fields)
+### PyArrow Schema (65 Fields)
 
 The schema is defined in `platforms/vast_schema.py` using PyArrow types:
 
 ```python
 import pyarrow as pa
 
+# IMPORTANT: VASTDB does NOT support NOT NULL constraints
+# All columns must be nullable (omit nullable parameter or set nullable=True)
+
+# Vector field helper - VAST requires this specific format
+def create_vector_field(name: str, dims: int) -> pa.Field:
+    vector_type = pa.list_(
+        pa.field(name="item", type=pa.float32(), nullable=False),
+        dims
+    )
+    return pa.field(name, vector_type)
+
 schema = pa.schema([
-    # Core Identity & Audit (7 fields)
-    pa.field("ID", pa.int64(), nullable=False),
-    pa.field("UUID", pa.string(), nullable=False),
-    pa.field("RogersAISchemaVersion", pa.string(), nullable=False),
-    pa.field("InsertDateTime", pa.timestamp('us', tz='UTC'), nullable=False),
-    pa.field("UpdateDateTime", pa.timestamp('us', tz='UTC'), nullable=False),
-    pa.field("InsertUser", pa.string(), nullable=False),
-    pa.field("UpdateUser", pa.string(), nullable=False),
+    # Core Identity & Audit (7 fields) - all nullable in VASTDB
+    pa.field("ID", pa.int64()),
+    pa.field("UUID", pa.string()),
+    pa.field("RogersAISchemaVersion", pa.string()),
+    pa.field("InsertDateTime", pa.timestamp('us', tz='UTC')),
+    pa.field("UpdateDateTime", pa.timestamp('us', tz='UTC')),
+    pa.field("InsertUser", pa.string()),
+    pa.field("UpdateUser", pa.string()),
     
     # Source Document Metadata (7 fields)
-    pa.field("SourceDocumentName", pa.string(), nullable=True),
+    pa.field("SourceDocumentName", pa.string()),
     # ... additional metadata fields
     
     # Vector Embeddings (5 providers × 3 fields = 15 fields)
-    pa.field("DocumentEmbeddingModel01", pa.string(), nullable=True),
-    pa.field("DocumentEmbeddingURL01", pa.string(), nullable=True),
-    pa.field("DocumentEmbeddingVectors01", pa.list_(pa.float32(), 1024), nullable=True),
+    pa.field("DocumentEmbeddingModel01", pa.string()),
+    pa.field("DocumentEmbeddingURL01", pa.string()),
+    create_vector_field("DocumentEmbeddingVectors01", 1024),  # VAST vector format
     # ... additional vector providers
     
     # Privacy & PII Protection (10 fields) - GDPR
-    pa.field("ContainsPII", pa.bool_(), nullable=False),
+    pa.field("ContainsPII", pa.bool_()),
     # ... additional privacy fields
     
     # ... remaining field groups
@@ -215,12 +239,12 @@ schema = pa.schema([
 | UUID | `pa.string()` | `"550e8400-e29b-..."` |
 | VARCHAR(n) | `pa.string()` | `"document.pdf"` |
 | TEXT | `pa.string()` | `"Long text content..."` |
-| TIMESTAMP WITH TZ | `pa.timestamp('us', tz='UTC')` | `2025-01-02T12:00:00Z` |
+| TIMESTAMP | `pa.timestamp('us')` or `pa.timestamp('us', tz='UTC')` | `2025-01-02T12:00:00` |
 | BOOLEAN | `pa.bool_()` | `True` / `False` |
 | INTEGER | `pa.int32()` | `42` |
 | NUMERIC(5,2) | `pa.float64()` | `95.50` |
 | JSONB | `pa.string()` | `'{"key": "value"}'` |
-| vector(1024) | `pa.list_(pa.float32(), 1024)` | `[0.1, 0.2, ...]` |
+| vector(N) | `pa.list_(pa.field("item", pa.float32(), False), N)` | `[0.1, 0.2, ...]` |
 
 ---
 
@@ -231,10 +255,11 @@ schema = pa.schema([
 ```python
 import vastdb
 
+# Note: Parameters are 'access' and 'secret' (not 'access_key'/'secret_key')
 session = vastdb.connect(
-    endpoint="your-cluster.example.com",
-    access_key="your-access-key",
-    secret_key="your-secret-key",
+    endpoint="http://your-cluster.example.com:8081",
+    access="your-access-key",
+    secret="your-secret-key",
 )
 ```
 
@@ -268,17 +293,52 @@ table = pa.Table.from_pydict(data)
 
 with session.transaction() as tx:
     bucket = tx.bucket("ai_workloads")
-    schema = bucket.schema("rogers_ai_schema")
-    tbl = schema.table("ai_documents")
-    tbl.insert(table)
+    # Use fail_if_missing=False to avoid exceptions
+    schema = bucket.schema("rogers_ai_schema", fail_if_missing=False) or \
+             bucket.create_schema("rogers_ai_schema")
+    tbl = schema.table("ai_documents", fail_if_missing=False)
+    if tbl:
+        tbl.insert(table)
 ```
 
-### Querying Data via Trino
+### Querying Data via ADBC Driver
 
-VASTDB integrates with Trino for SQL-based queries:
+For SQL queries including vector search, use the VAST ADBC driver:
+
+```python
+from adbc_driver_manager import dbapi
+
+# ADBC driver path (download from VAST GitHub Releases or Support Portal)
+driver_path = "/path/to/libvastdb_adbc_driver.so"
+
+# Table name format for ADBC queries
+full_table_name = '"ai_workloads/rogers_ai_schema"."ai_documents"'
+
+with dbapi.connect(
+    driver=driver_path,
+    db_kwargs={
+        "vast.db.endpoint": "http://your-cluster:8081",
+        "vast.db.access_key": "your-access-key",
+        "vast.db.secret_key": "your-secret-key"
+    }
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT ID, UUID, SourceDocumentName, DocumentChunkText
+            FROM {full_table_name}
+            WHERE DocumentStatus = 'Active'
+              AND ContainsPII = FALSE
+            LIMIT 100
+        """)
+        result = cur.fetch_arrow_table().to_pandas()
+```
+
+### Querying via Trino Connector
+
+VASTDB also integrates with Trino for SQL-based queries:
 
 ```sql
--- Basic SELECT
+-- Basic SELECT (Trino syntax)
 SELECT ID, UUID, SourceDocumentName, DocumentChunkText
 FROM ai_workloads.rogers_ai_schema.ai_documents
 WHERE DocumentStatus = 'Active'
@@ -296,38 +356,59 @@ WHERE DeletionScheduledDate <= CURRENT_TIMESTAMP
 
 ## Vector Similarity Search
 
+**Important**: Vector search queries should be executed via the ADBC driver for best performance.
+
 ### Cosine Similarity (Recommended for Embeddings)
 
-```sql
--- Find the 10 most similar documents
+```python
+from adbc_driver_manager import dbapi
+
+# Build query vector as SQL array with type cast
+query_vec = [0.1, 0.2, 0.3, ...]  # Your 1024-dim embedding
+vec_str = f"[{', '.join(map(str, query_vec))}]"
+vec_sql = f"{vec_str}::FLOAT[1024]"  # Type cast required
+
+full_table_name = '"ai_workloads/rogers_ai_schema"."ai_documents"'
+
+query = f"""
 SELECT 
     ID, 
     UUID,
     SourceDocumentName, 
     DocumentChunkText,
-    array_cosine_distance(DocumentEmbeddingVectors01, ARRAY[0.1, 0.2, ...]) AS distance
-FROM ai_workloads.rogers_ai_schema.ai_documents
+    array_cosine_distance(DocumentEmbeddingVectors01, {vec_sql}) AS distance
+FROM {full_table_name}
 WHERE DocumentStatus = 'Active'
   AND ContainsPII = FALSE
   AND DocumentEmbeddingVectors01 IS NOT NULL
 ORDER BY distance ASC
-LIMIT 10;
+LIMIT 10
+"""
+
+with dbapi.connect(driver=driver_path, db_kwargs={...}) as conn:
+    with conn.cursor() as cur:
+        cur.execute(query)
+        result = cur.fetch_arrow_table().to_pandas()
 ```
 
 ### Euclidean Distance
 
-```sql
--- Find documents within a distance threshold
+```python
+# Using array_distance() for Euclidean distance
+vec_sql = f"[{', '.join(map(str, query_vec))}]::FLOAT[1024]"
+
+query = f"""
 SELECT 
     ID,
     SourceDocumentName,
     DocumentChunkText,
-    array_distance(DocumentEmbeddingVectors01, ARRAY[0.1, 0.2, ...]) AS distance
-FROM ai_workloads.rogers_ai_schema.ai_documents
+    array_distance(DocumentEmbeddingVectors01, {vec_sql}) AS distance
+FROM "{bucket}/{schema}"."{table}"
 WHERE DocumentStatus = 'Active'
-  AND array_distance(DocumentEmbeddingVectors01, ARRAY[0.1, 0.2, ...]) < 1.5
+  AND array_distance(DocumentEmbeddingVectors01, {vec_sql}) < 1.5
 ORDER BY distance ASC
-LIMIT 20;
+LIMIT 20
+"""
 ```
 
 ### Filtered RAG Query with Compliance
@@ -482,10 +563,12 @@ import uuid
 import numpy as np
 
 def ingest_document(
-    session: vastdb.Session,
+    session,  # vastdb session from vastdb.connect()
     document_name: str,
     chunks: list[str],
     embeddings: list[np.ndarray],
+    bucket_name: str = "ai_workloads",
+    schema_name: str = "rogers_ai_schema",
     user: str = "ingestion_pipeline"
 ) -> list[str]:
     """
@@ -517,17 +600,20 @@ def ingest_document(
             "ContainsPII": False,
             "AccessControlLevel": "Internal",
             "DocumentStatus": "Active",
-            # ... set remaining required fields
+            # ... set remaining fields as needed
         })
     
     # Convert to PyArrow and insert
     table = pa.Table.from_pylist(records)
     
     with session.transaction() as tx:
-        bucket = tx.bucket("ai_workloads")
-        schema = bucket.schema("rogers_ai_schema")
-        tbl = schema.table("ai_documents")
-        tbl.insert(table)
+        bucket = tx.bucket(bucket_name)
+        # Use fail_if_missing=False pattern
+        schema = bucket.schema(schema_name, fail_if_missing=False)
+        if schema:
+            tbl = schema.table("ai_documents", fail_if_missing=False)
+            if tbl:
+                tbl.insert(table)
     
     return uuids
 ```
