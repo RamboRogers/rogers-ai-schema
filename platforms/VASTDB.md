@@ -159,6 +159,7 @@ python platforms/vast_schema.py --create --drop
 
 | Feature | VASTDB Support | Notes |
 |---------|---------------|-------|
+| **Auto-increment IDs** | ✅ `vastdb_rowid` | Native auto-incrementing row IDs |
 | Vector storage | ✅ Native | Fixed-dimension arrays |
 | Cosine similarity | ✅ `array_cosine_distance()` | Built-in function |
 | Euclidean distance | ✅ `array_distance()` | Built-in function |
@@ -174,12 +175,45 @@ python platforms/vast_schema.py --create --drop
 | **NOT NULL constraints** | `NOT NULL` | Not available | All columns nullable; validate in app |
 | Vector indexes (HNSW) | `CREATE INDEX ... USING hnsw` | Not available | VAST's architecture optimizes brute-force |
 | Triggers | `CREATE TRIGGER` | Not available | Set timestamps in application code |
-| SERIAL/AUTOINCREMENT | `BIGSERIAL` | Not available | Generate IDs in application |
 | CHECK constraints | `CHECK (...)` | Not available | Validate in application layer |
 | gen_random_uuid() | Built-in | Not available | Use Python `uuid.uuid4()` |
 | DEFAULT values | `DEFAULT 'value'` | Not available | Set defaults when inserting |
 | JSONB | Native type | Not available | Store JSON as string |
 | DISTINCT in aggregates | `COUNT(DISTINCT col)` | Limited | Use subqueries or GROUP BY |
+
+### vastdb_rowid Auto-Increment Feature
+
+VAST provides native auto-incrementing row IDs via the `vastdb_rowid` column, eliminating the need for application-layer ID generation.
+
+#### Allocation Modes
+
+| Mode | How to Use | Use Case |
+|------|------------|----------|
+| **Internal** (recommended) | Omit `vastdb_rowid` on INSERT | Standard auto-increment (like PostgreSQL BIGSERIAL) |
+| **External** | Provide `vastdb_rowid` value (max: 2^48-1) | Custom partitioning, Splunk integration |
+
+**Important**: The allocation mode is locked on the first INSERT to the table and cannot be changed.
+
+#### Key Constraints
+
+- Cannot UPDATE `vastdb_rowid` values after insert
+- Cannot ADD/DROP/RENAME the `vastdb_rowid` column (except on empty tables)
+- Max value: 2^48-1 (281,474,976,710,655)
+- Reinserting deleted row IDs may cause brief write conflicts with background truncator
+
+#### Performance Benefits
+
+Filtering on `vastdb_rowid` enables **efficient tree pruning** for fast queries:
+
+```sql
+-- Very fast range query - skips irrelevant tree sections
+SELECT * FROM ai_documents
+WHERE vastdb_rowid > 1000 AND vastdb_rowid < 2000;
+
+-- Extremely fast single-record lookup
+SELECT * FROM ai_documents
+WHERE vastdb_rowid = 12345;
+```
 
 ---
 
@@ -205,7 +239,10 @@ def create_vector_field(name: str, dims: int) -> pa.Field:
 
 schema = pa.schema([
     # Core Identity & Audit (7 fields) - all nullable in VASTDB
-    pa.field("ID", pa.int64()),
+    # vastdb_rowid: VAST-managed auto-incrementing row ID
+    # - Omit on INSERT for internal allocation (auto-increment)
+    # - Provide value for external allocation (max: 2^48-1)
+    pa.field("vastdb_rowid", pa.int64()),
     pa.field("UUID", pa.string()),
     pa.field("RogersAISchemaVersion", pa.string()),
     pa.field("InsertDateTime", pa.timestamp('us', tz='UTC')),
@@ -235,7 +272,7 @@ schema = pa.schema([
 
 | Schema Type | PyArrow Type | Example |
 |-------------|--------------|---------|
-| BIGSERIAL/ID | `pa.int64()` | `12345678901` |
+| vastdb_rowid (auto-increment) | `pa.int64()` | `12345678901` (auto-generated or user-provided) |
 | UUID | `pa.string()` | `"550e8400-e29b-..."` |
 | VARCHAR(n) | `pa.string()` | `"document.pdf"` |
 | TEXT | `pa.string()` | `"Long text content..."` |
@@ -271,8 +308,10 @@ from datetime import datetime, timezone
 import uuid
 
 # Prepare data as PyArrow Table
+# NOTE: vastdb_rowid is omitted - VAST will auto-generate (internal allocation)
+# For external allocation, provide: "vastdb_rowid": [your_id]
 data = {
-    "ID": [1],
+    # "vastdb_rowid": [None],  # Omit or set to None for auto-increment
     "UUID": [str(uuid.uuid4())],
     "RogersAISchemaVersion": ["1.0.0-tier1"],
     "InsertDateTime": [datetime.now(timezone.utc)],
@@ -324,7 +363,7 @@ with dbapi.connect(
 ) as conn:
     with conn.cursor() as cur:
         cur.execute(f"""
-            SELECT ID, UUID, SourceDocumentName, DocumentChunkText
+            SELECT vastdb_rowid, UUID, SourceDocumentName, DocumentChunkText
             FROM {full_table_name}
             WHERE DocumentStatus = 'Active'
               AND ContainsPII = FALSE
@@ -339,7 +378,7 @@ VASTDB also integrates with Trino for SQL-based queries:
 
 ```sql
 -- Basic SELECT (Trino syntax)
-SELECT ID, UUID, SourceDocumentName, DocumentChunkText
+SELECT vastdb_rowid, UUID, SourceDocumentName, DocumentChunkText
 FROM ai_workloads.rogers_ai_schema.ai_documents
 WHERE DocumentStatus = 'Active'
   AND ContainsPII = FALSE
@@ -372,7 +411,7 @@ full_table_name = '"ai_workloads/rogers_ai_schema"."ai_documents"'
 
 query = f"""
 SELECT 
-    ID, 
+    vastdb_rowid, 
     UUID,
     SourceDocumentName, 
     DocumentChunkText,
@@ -399,7 +438,7 @@ vec_sql = f"[{', '.join(map(str, query_vec))}]::FLOAT[1024]"
 
 query = f"""
 SELECT 
-    ID,
+    vastdb_rowid,
     SourceDocumentName,
     DocumentChunkText,
     array_distance(DocumentEmbeddingVectors01, {vec_sql}) AS distance
@@ -416,7 +455,7 @@ LIMIT 20
 ```sql
 -- Production RAG query with access control
 SELECT 
-    ID,
+    vastdb_rowid,
     UUID,
     SourceDocumentName,
     DocumentChunkText,
@@ -436,7 +475,7 @@ LIMIT 10;
 ```sql
 -- Compare embeddings from different providers
 SELECT 
-    ID,
+    vastdb_rowid,
     SourceDocumentName,
     DocumentEmbeddingModel01,
     array_cosine_distance(DocumentEmbeddingVectors01, ARRAY[...]) AS dist_provider1,
@@ -455,28 +494,29 @@ LIMIT 10;
 
 Since VASTDB does not support certain database-level features, your application must handle:
 
-### 1. ID Generation
+### 1. Row ID Handling (vastdb_rowid)
+
+VAST provides native auto-incrementing IDs via `vastdb_rowid`. In most cases, you can simply omit this field and let VAST auto-generate it (internal allocation).
 
 ```python
-import threading
+# Internal allocation (recommended) - omit vastdb_rowid, VAST auto-generates
+record = {
+    # "vastdb_rowid": None,  # Omit or set to None
+    "UUID": str(uuid.uuid4()),
+    "DocumentChunkText": "...",
+    # ... other fields
+}
 
-class IDGenerator:
-    """Thread-safe ID generator for VASTDB."""
-    
-    def __init__(self, start_id: int = 1):
-        self._counter = start_id
-        self._lock = threading.Lock()
-    
-    def next_id(self) -> int:
-        with self._lock:
-            current = self._counter
-            self._counter += 1
-            return current
-
-# Usage
-id_gen = IDGenerator()
-new_id = id_gen.next_id()
+# External allocation - for custom ID schemes or Splunk integration
+record = {
+    "vastdb_rowid": 1000001,  # User-provided ID (max: 2^48-1)
+    "UUID": str(uuid.uuid4()),
+    "DocumentChunkText": "...",
+    # ... other fields
+}
 ```
+
+**Note**: The allocation mode is locked on the first INSERT to the table.
 
 ### 2. UUID Generation
 
@@ -575,6 +615,7 @@ def ingest_document(
     Ingest a document with its chunks and embeddings.
     
     Returns list of UUIDs for the inserted records.
+    vastdb_rowid is auto-generated by VAST (internal allocation).
     """
     now = datetime.now(timezone.utc)
     uuids = []
@@ -585,7 +626,7 @@ def ingest_document(
         uuids.append(doc_uuid)
         
         records.append({
-            "ID": i + 1,  # In production, use a proper ID generator
+            # vastdb_rowid omitted - VAST auto-generates (internal allocation)
             "UUID": doc_uuid,
             "RogersAISchemaVersion": "1.0.0-tier1",
             "InsertDateTime": now,
@@ -671,6 +712,22 @@ class VASTDBVectorStore(VectorStore):
 
 ## Performance Considerations
 
+### vastdb_rowid Performance Benefits
+
+The `vastdb_rowid` column enables efficient tree pruning for fast queries:
+
+```sql
+-- Range queries are extremely fast - skips irrelevant tree sections
+SELECT * FROM ai_documents
+WHERE vastdb_rowid > 10000 AND vastdb_rowid < 20000
+  AND DocumentStatus = 'Active';
+
+-- Single-record lookups are near-instant
+SELECT * FROM ai_documents WHERE vastdb_rowid = 12345;
+```
+
+Use external allocation mode to create logical "partitions" by assigning ID ranges to different data categories.
+
 ### Vector Search Optimization
 
 Since VASTDB doesn't support vector indexes (in 5.4 it does in 5.5 soon to be released), consider these strategies in the short term:
@@ -682,7 +739,11 @@ Since VASTDB doesn't support vector indexes (in 5.4 it does in 5.5 soon to be re
      AND ContainsPII = FALSE
    ```
 
-2. **Partitioning**: Organize data by dataset type, date, or access level
+2. **vastdb_rowid filtering**: Combine with row ID ranges for fast subset queries
+   ```sql
+   WHERE vastdb_rowid > 1000 AND vastdb_rowid < 5000
+     AND DocumentStatus = 'Active'
+   ```
 
 3. **Batch Processing**: Process large ingestion jobs in batches of 5MB (VAST row batch limit)
 
@@ -690,6 +751,7 @@ Since VASTDB doesn't support vector indexes (in 5.4 it does in 5.5 soon to be re
 
 | Strategy | Impact | Example |
 |----------|--------|---------|
+| **Filter by vastdb_rowid** | **Very High** | `WHERE vastdb_rowid > X AND vastdb_rowid < Y` |
 | Filter early | High | Add WHERE before ORDER BY distance |
 | Limit results | High | Always use LIMIT clause |
 | Avoid SELECT * | Medium | Select only needed columns |

@@ -29,11 +29,21 @@ Usage:
     # Run the script
     python vast_schema.py
 
-VASTDB Limitations (handled by this implementation):
+VASTDB Features & Limitations (handled by this implementation):
+    
+    vastdb_rowid Auto-Increment Support:
+    - VAST provides native auto-incrementing row IDs via the 'vastdb_rowid' column
+    - Two allocation modes (mode is locked on first insert):
+      * Internal allocation: Omit vastdb_rowid on insert, VAST auto-generates IDs
+      * External allocation: Provide vastdb_rowid values on insert (max: 2^48-1)
+    - Filtering on vastdb_rowid enables efficient tree pruning for fast queries
+    - Cannot update vastdb_rowid values after insert
+    - Cannot add/drop/rename the vastdb_rowid column (except on empty tables)
+    
+    Limitations (application layer required):
     - No NOT NULL constraints - all columns must be nullable, validate in application
     - No vector indexes (HNSW, IVFFlat) - uses brute-force search with array_cosine_distance()
     - No triggers - timestamps must be set at application layer
-    - No SERIAL/AUTOINCREMENT - IDs must be generated at application layer
     - No CHECK constraints - validation must be done at application layer
     - No DEFAULT values - must be set at application layer
     - No gen_random_uuid() - UUIDs must be generated in Python
@@ -142,8 +152,12 @@ def create_ai_documents_schema(vector_dims: int = VECTOR_DIMENSIONS) -> pa.Schem
         # Core Identity & Audit (7 fields)
         # Application must ensure these are populated (no NOT NULL in VASTDB)
         # =============================================
-        # ID: Application-generated (no AUTOINCREMENT in VASTDB)
-        pa.field("ID", pa.int64()),
+        # vastdb_rowid: VAST-managed auto-incrementing row ID
+        # - Internal allocation: Omit value on insert, VAST auto-generates
+        # - External allocation: Provide value on insert (max: 2^48-1)
+        # - Allocation mode is locked on first insert to table
+        # - Enables efficient filtering: WHERE vastdb_rowid > X AND vastdb_rowid < Y
+        pa.field("vastdb_rowid", pa.int64()),
         # UUID: Application-generated string UUID
         pa.field("UUID", pa.string()),
         # Schema version for compatibility tracking
@@ -357,6 +371,56 @@ def validate_score_range(value: float, field_name: str, min_val: float = 0, max_
 
 
 # =============================================================================
+# vastdb_rowid Allocation Modes
+# =============================================================================
+#
+# VAST Data Platform supports two allocation modes for the vastdb_rowid column.
+# The mode is determined by the first INSERT operation and is locked for the
+# lifetime of the table.
+#
+# INTERNAL ALLOCATION (Recommended for most use cases)
+# -----------------------------------------------------
+# - Omit vastdb_rowid from INSERT or set to None/NULL
+# - VAST automatically generates sequential row IDs
+# - Similar to PostgreSQL BIGSERIAL or MySQL AUTO_INCREMENT
+# - Example:
+#     record = create_example_record(
+#         insert_user="pipeline",
+#         document_name="doc.pdf",
+#         chunk_text="content...",
+#         # vastdb_rowid omitted - VAST will auto-generate
+#     )
+#
+# EXTERNAL ALLOCATION (For custom partitioning/ID schemes)
+# ---------------------------------------------------------
+# - Provide vastdb_rowid value on INSERT (must be <= 2^48-1)
+# - User is responsible for ensuring uniqueness
+# - Enables custom partitioning: group related rows in ID ranges
+# - Useful for Splunk integration (UUID-like lookups)
+# - Example:
+#     record = create_example_record(
+#         insert_user="pipeline",
+#         document_name="doc.pdf",
+#         chunk_text="content...",
+#         vastdb_rowid=1000001,  # User-controlled ID
+#     )
+#
+# KEY CONSTRAINTS:
+# - Cannot mix allocation modes within a table
+# - Cannot UPDATE vastdb_rowid values
+# - Cannot ADD/DROP/RENAME vastdb_rowid column (except on empty tables)
+# - Reinserting deleted row IDs may cause brief write conflicts with truncator
+# - Max value: 2^48-1 (281,474,976,710,655)
+#
+# QUERY PERFORMANCE:
+# - Filtering on vastdb_rowid enables efficient tree pruning
+# - Range queries (vastdb_rowid > X AND vastdb_rowid < Y) are very fast
+# - Single-record lookups by vastdb_rowid are extremely efficient
+#
+# =============================================================================
+
+
+# =============================================================================
 # Enum Value Definitions (for validation)
 # =============================================================================
 
@@ -536,11 +600,11 @@ def print_schema_info(vector_dims: int = VECTOR_DIMENSIONS):
 # =============================================================================
 
 def create_example_record(
-    document_id: int,
     insert_user: str,
     document_name: str,
     chunk_text: str,
     embedding_vector: Optional[List[float]] = None,
+    vastdb_rowid: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Create an example record dictionary with proper field values.
@@ -549,11 +613,14 @@ def create_example_record(
     when inserting data into VASTDB.
     
     Args:
-        document_id: Unique document ID (application-generated)
         insert_user: Username performing the insert
         document_name: Name of the source document
         chunk_text: The text content of this chunk
         embedding_vector: Optional embedding vector (must match VECTOR_DIMENSIONS)
+        vastdb_rowid: Optional row ID for external allocation mode.
+            - If None (default): Uses internal allocation, VAST auto-generates the ID
+            - If provided: Uses external allocation, must be <= 2^48-1
+            NOTE: Allocation mode is locked on first insert to the table.
     
     Returns:
         Dictionary with all fields properly set
@@ -562,7 +629,9 @@ def create_example_record(
     
     record = {
         # Core Identity & Audit
-        "ID": document_id,
+        # vastdb_rowid: Omit for internal allocation (VAST auto-generates),
+        # or provide value for external allocation (max: 2^48-1)
+        "vastdb_rowid": vastdb_rowid,  # None = internal allocation (auto-increment)
         "UUID": generate_uuid(),
         "RogersAISchemaVersion": ROGERS_AI_SCHEMA_VERSION,
         "InsertDateTime": now,
@@ -664,11 +733,13 @@ VECTOR_SEARCH_EXAMPLES = """
 -- VASTDB provides built-in distance functions for vector similarity search.
 -- Note: There are no vector indexes in VASTDB - searches perform brute-force
 -- comparisons, which is optimized by VAST's architecture.
+--
+-- vastdb_rowid enables efficient tree pruning for range-based queries
 
 -- Example 1: Cosine Similarity Search (recommended for embeddings)
 -- Find the 10 most similar documents using cosine distance
 SELECT 
-    ID, 
+    vastdb_rowid, 
     UUID,
     SourceDocumentName, 
     DocumentChunkText,
@@ -682,7 +753,7 @@ LIMIT 10;
 -- Example 2: Euclidean Distance Search
 -- Find documents within a certain distance threshold
 SELECT 
-    ID,
+    vastdb_rowid,
     SourceDocumentName,
     DocumentChunkText,
     array_distance(DocumentEmbeddingVectors01, ARRAY[0.1, 0.2, ...]) AS distance
@@ -695,7 +766,7 @@ LIMIT 20;
 -- Example 3: Filtered Vector Search with Compliance Constraints
 -- RAG query with access control and PII filtering
 SELECT 
-    ID,
+    vastdb_rowid,
     UUID,
     SourceDocumentName,
     DocumentChunkText,
@@ -711,7 +782,7 @@ LIMIT 10;
 -- Example 4: Multi-Provider Embedding Comparison
 -- Compare results from different embedding providers
 SELECT 
-    ID,
+    vastdb_rowid,
     SourceDocumentName,
     DocumentEmbeddingModel01,
     array_cosine_distance(DocumentEmbeddingVectors01, ARRAY[...]) AS distance_provider1,
@@ -723,6 +794,24 @@ WHERE DocumentStatus = 'Active'
   AND DocumentEmbeddingVectors02 IS NOT NULL
 ORDER BY distance_provider1 ASC
 LIMIT 10;
+
+-- Example 5: Efficient Range Query using vastdb_rowid
+-- Use vastdb_rowid for fast tree pruning - excellent for partitioning-like queries
+-- This enables fast lookups by skipping irrelevant tree sections
+SELECT 
+    vastdb_rowid,
+    UUID,
+    SourceDocumentName,
+    DocumentChunkText
+FROM ai_documents
+WHERE vastdb_rowid > 1000 AND vastdb_rowid < 2000
+  AND DocumentStatus = 'Active';
+
+-- Example 6: Single Record Lookup by vastdb_rowid
+-- Extremely fast single-record retrieval using vastdb_rowid
+SELECT *
+FROM ai_documents
+WHERE vastdb_rowid = 12345;
 """
 
 
